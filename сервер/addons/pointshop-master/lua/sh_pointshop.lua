@@ -62,6 +62,7 @@ function PS:LoadItems()
 			CATEGORY.AllowedEquipped = -1
 			CATEGORY.AllowedUserGroups = {}
 			CATEGORY.CanPlayerSee = function() return true end
+			CATEGORY.ModifyTab = function(tab) return end
 			
 			if SERVER then AddCSLuaFile('items/' .. category .. '/__category.lua') end
 			include('items/' .. category .. '/__category.lua')
@@ -79,7 +80,7 @@ function PS:LoadItems()
 					ITEM = {}
 					
 					ITEM.__index = ITEM
-					ITEM.ID = string.gsub(name, '.lua', '')
+					ITEM.ID = string.gsub(string.lower(name), '.lua', '')
 					ITEM.Category = CATEGORY.Name
 					ITEM.Price = 0
 					
@@ -92,6 +93,9 @@ function PS:LoadItems()
 					
 					ITEM.CanPlayerBuy = true
 					ITEM.CanPlayerSell = true
+					
+					ITEM.CanPlayerEquip = true
+					ITEM.CanPlayerHolster = true
 
 					ITEM.OnBuy = function() end
 					ITEM.OnSell = function() end

@@ -1,5 +1,5 @@
 ITEM.Name = 'Super Size'
-ITEM.Price = 10000
+ITEM.Price = 1000
 ITEM.Model = 'models/props_junk/GlassBottle01a.mdl'
 ITEM.NoPreview = true
 

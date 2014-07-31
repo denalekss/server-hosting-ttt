@@ -13,7 +13,7 @@ local function BuildItemMenu(menu, ply, itemstype, callback)
 		
 		local catmenu = menu:AddSubMenu(CATEGORY.Name)
 		
-		table.SortByMember(PS.Items, "Name", function(a, b) return a > b end)
+		table.SortByMember(PS.Items, PS.Config.SortItemsBy, function(a, b) return a > b end)
 		
 		for item_id, ITEM in pairs(PS.Items) do
 			if ITEM.Category == CATEGORY.Name then
@@ -76,7 +76,7 @@ function PANEL:Init()
 		table.insert(items, i)
 	end
 	
-	table.SortByMember(items, "Name", function(a, b) return a > b end)
+	table.SortByMember(items, PS.Config.SortItemsBy, function(a, b) return a > b end)
 	
 	-- items
 	for _, CATEGORY in pairs(categories) do
@@ -92,18 +92,25 @@ function PANEL:Init()
 			end
 		end
 		
-		local ShopCategoryTab = vgui.Create('DPanel')
+		--Allow addons to create custom Category display types
+		local ShopCategoryTab = hook.Run( "PS_CustomCategoryTab", CATEGORY )
+		if IsValid( ShopCategoryTab ) then
+			tabs:AddSheet(CATEGORY.Name, ShopCategoryTab, 'icon16/' .. CATEGORY.Icon .. '.png', false, false, '')
+			continue
+		else
+			ShopCategoryTab = vgui.Create('DPanel')
+		end
 		
-		local DScrollPanel = vgui.Create('DScrollPanel', ShopCategoryTab)
-		DScrollPanel:Dock(FILL)
+		ShopCategoryTab.DScrollPanel = vgui.Create('DScrollPanel', ShopCategoryTab)
+		ShopCategoryTab.DScrollPanel:Dock(FILL)
 		
-		local ShopCategoryTabLayout = vgui.Create('DIconLayout', DScrollPanel)
-		ShopCategoryTabLayout:Dock(FILL)
-		ShopCategoryTabLayout:SetBorder(10)
-		ShopCategoryTabLayout:SetSpaceX(10)
-		ShopCategoryTabLayout:SetSpaceY(10)
+		ShopCategoryTab.DIconLayout = vgui.Create('DIconLayout', ShopCategoryTab.DScrollPanel)
+		ShopCategoryTab.DIconLayout:Dock(FILL)
+		ShopCategoryTab.DIconLayout:SetBorder(10)
+		ShopCategoryTab.DIconLayout:SetSpaceX(10)
+		ShopCategoryTab.DIconLayout:SetSpaceY(10)
 		
-		DScrollPanel:AddItem(ShopCategoryTabLayout)
+		ShopCategoryTab.DScrollPanel:AddItem(ShopCategoryTab.DIconLayout)
 		
 		for _, ITEM in pairs(items) do
 			if ITEM.Category == CATEGORY.Name then
@@ -111,8 +118,12 @@ function PANEL:Init()
 				model:SetData(ITEM)
 				model:SetSize(126, 126)
 				
-				ShopCategoryTabLayout:Add(model)
+				ShopCategoryTab.DIconLayout:Add(model)
 			end
+		end
+		
+		if CATEGORY.ModifyTab then
+			CATEGORY:ModifyTab(ShopCategoryTab)
 		end
 		
 		tabs:AddSheet(CATEGORY.Name, ShopCategoryTab, 'icon16/' .. CATEGORY.Icon .. '.png', false, false, '')
@@ -136,10 +147,10 @@ function PANEL:Init()
 			
 			local menu = DermaMenu()
 			
-			menu:AddOption('Set Points...', function()
+			menu:AddOption('Set '..PS.Config.PointsName..'...', function()
 				Derma_StringRequest(
-					"Set Points for " .. ply:GetName(),
-					"Set points to...",
+					"Set "..PS.Config.PointsName.." for " .. ply:GetName(),
+					"Set "..PS.Config.PointsName.." to...",
 					"",
 					function(str)
 						if not str or not tonumber(str) then return end
@@ -152,10 +163,10 @@ function PANEL:Init()
 				)
 			end)
 			
-			menu:AddOption('Give Points...', function()
+			menu:AddOption('Give '..PS.Config.PointsName..'...', function()
 				Derma_StringRequest(
-					"Give Points to " .. ply:GetName(),
-					"Give points...",
+					"Give "..PS.Config.PointsName.." to " .. ply:GetName(),
+					"Give "..PS.Config.PointsName.."...",
 					"",
 					function(str)
 						if not str or not tonumber(str) then return end
@@ -168,10 +179,10 @@ function PANEL:Init()
 				)
 			end)
 			
-			menu:AddOption('Take Points...', function()
+			menu:AddOption('Take '..PS.Config.PointsName..'...', function()
 				Derma_StringRequest(
-					"Take Points from " .. ply:GetName(),
-					"Take points...",
+					"Take "..PS.Config.PointsName.." from " .. ply:GetName(),
+					"Take "..PS.Config.PointsName.."...",
 					"",
 					function(str)
 						if not str or not tonumber(str) then return end
@@ -225,7 +236,7 @@ function PANEL:Init()
 	
 	if PS.Config.CanPlayersGivePoints then
 		local givebutton = vgui.Create('DButton', preview or self)
-		givebutton:SetText("Give Points")
+		givebutton:SetText("Give "..PS.Config.PointsName)
 		if PS.Config.DisplayPreviewInMenu then
 			givebutton:DockMargin(8, 8, 8, 8)
 		else
@@ -277,7 +288,7 @@ function PANEL:Paint()
 	
 	draw.SimpleText('PointShop', 'PS_Heading', 20, 10, color_white)
 	draw.SimpleText('by _Undefined', 'PS_Heading2', 275, 50, color_white)
-	draw.SimpleText('You have ' .. LocalPlayer():PS_GetPoints() .. ' points', 'PS_Heading3', self:GetWide() - 10, 60, color_white, TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
+	draw.SimpleText('You have ' .. LocalPlayer():PS_GetPoints() .. ' ' .. PS.Config.PointsName, 'PS_Heading3', self:GetWide() - 10, 60, color_white, TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
 end
 
 vgui.Register('DPointShopMenu', PANEL)

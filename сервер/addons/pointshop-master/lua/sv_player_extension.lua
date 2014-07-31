@@ -8,6 +8,7 @@ function Player:PS_PlayerSpawn()
 	if TEAM_SPEC != nil and self:Team() == TEAM_SPEC then return end
 	
 	timer.Simple(1, function()
+		if !IsValid(self) then return end
 		for item_id, item in pairs(self.PS_Items) do
 			local ITEM = PS.Items[item_id]
 			if item.Equipped then
@@ -32,56 +33,52 @@ function Player:PS_PlayerInitialSpawn()
 	
 	-- Send stuff
 	timer.Simple(1, function()
-		if IsValid(self) then
-			self:PS_LoadData()
-			self:PS_SendClientsideModels()
-		end
+		if !IsValid(self) then return end
+		
+		self:PS_LoadData()
+		self:PS_SendClientsideModels()
 	end)
 	
 	if PS.Config.NotifyOnJoin then
 		if PS.Config.ShopKey ~= '' then
 			timer.Simple(5, function() -- Give them time to load up
-				if IsValid(self) then
-					self:PS_Notify('Press ' .. PS.Config.ShopKey .. ' to open PointShop!')
-				end
+				if !IsValid(self) then return end
+				self:PS_Notify('Press ' .. PS.Config.ShopKey .. ' to open PointShop!')
 			end)
 		end
 		
 		if PS.Config.ShopCommand ~= '' then
 			timer.Simple(5, function() -- Give them time to load up
-				if IsValid(self) then
-					self:PS_Notify('Type ' .. PS.Config.ShopCommand .. ' in console to open PointShop!')
-				end
+				if !IsValid(self) then return end
+				self:PS_Notify('Type ' .. PS.Config.ShopCommand .. ' in console to open PointShop!')
 			end)
 		end
 		
 		if PS.Config.ShopChatCommand ~= '' then
 			timer.Simple(5, function() -- Give them time to load up
-				if IsValid(self) then
-					self:PS_Notify('Type ' .. PS.Config.ShopChatCommand .. ' in chat to open PointShop!')
-				end
+				if !IsValid(self) then return end
+				self:PS_Notify('Type ' .. PS.Config.ShopChatCommand .. ' in chat to open PointShop!')
 			end)
 		end
 		
 		timer.Simple(10, function() -- Give them time to load up
-			if IsValid(self) then
-				self:PS_Notify('You have ' .. self:PS_GetPoints() .. ' points to spend!')
-			end
+			if !IsValid(self) then return end
+			self:PS_Notify('You have ' .. self:PS_GetPoints() .. ' ' .. PS.Config.PointsName .. ' to spend!')
 		end)
 	end
 
 	if PS.Config.CheckVersion and PS.BuildOutdated and self:IsAdmin() then
 		timer.Simple(5, function()
-			if IsValid(self) then
-				self:PS_Notify("PointShop is out of date, please tell the server owner!")
-			end
+			if !IsValid(self) then return end
+			self:PS_Notify("PointShop is out of date, please tell the server owner!")
 		end)
 	end
 	
 	if PS.Config.PointsOverTime then
 		timer.Create('PS_PointsOverTime_' .. self:UniqueID(), PS.Config.PointsOverTimeDelay * 60, 0, function()
+			if !IsValid(self) then return end
 			self:PS_GivePoints(PS.Config.PointsOverTimeAmount)
-			self:PS_Notify("You've been given ", PS.Config.PointsOverTimeAmount, " points for playing on the server!")
+			self:PS_Notify("You've been given ", PS.Config.PointsOverTimeAmount, " ", PS.Config.PointsName, " for playing on the server!")
 		end)
 	end
 end
@@ -96,6 +93,9 @@ function Player:PS_PlayerDisconnected()
 end
 
 function Player:PS_Save()
+	-- Make sure we don't save before we have loaded the data for the first time
+	if not self.PS_FirstLoadCompleted then return end
+	
 	PS:SetPlayerData(self, self.PS_Points, self.PS_Items)
 end
 
@@ -109,14 +109,19 @@ function Player:PS_LoadData()
 		
 		self:PS_SendPoints()
 		self:PS_SendItems()
+
+		self.PS_FirstLoadCompleted = true
 	end)
 end
 
-function Player:PS_CanPerformAction()
+function Player:PS_CanPerformAction(itemname)
 	local allowed = true
+	local itemexcept = false
+	if itemname then itemexcept = PS.Items[itemname].Except end
+
+	if (self.IsSpec and self:IsSpec()) and not itemexcept then allowed = false end
+	if not self:Alive() and not itemexcept then allowed = false end
 	
-	if self.IsSpec and self:IsSpec() then allowed = false end
-	if not self:Alive() then allowed = false end
 	
 	if not allowed then
 		self:PS_Notify('You\'re not allowed to do that at the moment!')
@@ -182,7 +187,7 @@ function Player:PS_BuyItem(item_id)
 	local points = PS.Config.CalculateBuyPrice(self, ITEM)
 	
 	if not self:PS_HasPoints(points) then return false end
-	if not self:PS_CanPerformAction() then return end
+	if not self:PS_CanPerformAction(item_id) then return end
 	
 	if ITEM.AdminOnly and not self:IsAdmin() then
 		self:PS_Notify('This item is Admin only!')
@@ -229,7 +234,7 @@ function Player:PS_BuyItem(item_id)
 	
 	self:PS_TakePoints(points)
 	
-	self:PS_Notify('Bought ', ITEM.Name, ' for ', points, ' points.')
+	self:PS_Notify('Bought ', ITEM.Name, ' for ', points, ' ', PS.Config.PointsName)
 	
 	ITEM:OnBuy(self)
 	
@@ -268,7 +273,7 @@ function Player:PS_SellItem(item_id)
 	ITEM:OnHolster(self)
 	ITEM:OnSell(self)
 	
-	self:PS_Notify('Sold ', ITEM.Name, ' for ', points, ' points.')
+	self:PS_Notify('Sold ', ITEM.Name, ' for ', points, ' ', PS.Config.PointsName)
 	
 	return self:PS_TakeItem(item_id)
 end
@@ -301,9 +306,20 @@ end
 function Player:PS_EquipItem(item_id)
 	if not PS.Items[item_id] then return false end
 	if not self:PS_HasItem(item_id) then return false end
-	if not self:PS_CanPerformAction() then return false end
+	if not self:PS_CanPerformAction(item_id) then return false end
 	
 	local ITEM = PS.Items[item_id]
+	
+	if type(ITEM.CanPlayerEquip) == 'function' then
+		allowed, message = ITEM:CanPlayerEquip(self)
+	elseif type(ITEM.CanPlayerEquip) == 'boolean' then
+		allowed = ITEM.CanPlayerEquip
+	end
+	
+	if not allowed then
+		self:PS_Notify(message or 'You\'re not allowed to equip this item!')
+		return false
+	end
 	
 	local cat_name = ITEM.Category
 	local CATEGORY = PS:FindCategoryByName(cat_name)
@@ -312,6 +328,38 @@ function Player:PS_EquipItem(item_id)
 		if self:PS_NumItemsEquippedFromCategory(cat_name) + 1 > CATEGORY.AllowedEquipped then
 			self:PS_Notify('Only ' .. CATEGORY.AllowedEquipped .. ' item' .. (CATEGORY.AllowedEquipped == 1 and '' or 's') .. ' can be equipped from this category!')
 			return false
+		end
+	end
+	
+	if CATEGORY.SharedCategories then
+		local ConCatCats = CATEGORY.Name
+		for p, c in pairs( CATEGORY.SharedCategories ) do
+			if p ~= #CATEGORY.SharedCategories then
+				ConCatCats = ConCatCats .. ', ' .. c
+			else
+				if #CATEGORY.SharedCategories ~= 1 then
+					ConCatCats = ConCatCats .. ', and ' .. c
+				else
+					ConCatCats = ConCatCats .. ' and ' .. c
+				end
+			end
+		end
+		local NumEquipped = self.PS_NumItemsEquippedFromCategory
+		for id, item in pairs(self.PS_Items) do
+			if not self:PS_HasItemEquipped(id) then continue end
+			local CatName = PS.Items[id].Category
+			local Cat = PS:FindCategoryByName( CatName )
+			if not Cat.SharedCategories then continue end
+			for _, SharedCategory in pairs( Cat.SharedCategories ) do
+				if SharedCategory == CATEGORY.Name then
+					if Cat.AllowedEquipped > -1 and CATEGORY.AllowedEquipped > -1 then
+						if NumEquipped(self,CatName) + NumEquipped(self,CATEGORY.Name) + 1 > Cat.AllowedEquipped then
+							self:PS_Notify('Only ' .. Cat.AllowedEquipped .. ' item'.. (Cat.AllowedEquipped == 1 and '' or 's') ..' can be equipped over ' .. ConCatCats .. '!')
+							return false
+						end
+					end
+				end
+			end
 		end
 	end
 	
@@ -327,11 +375,23 @@ end
 function Player:PS_HolsterItem(item_id)
 	if not PS.Items[item_id] then return false end
 	if not self:PS_HasItem(item_id) then return false end
-	if not self:PS_CanPerformAction() then return false end
+	if not self:PS_CanPerformAction(item_id) then return false end
 	
 	self.PS_Items[item_id].Equipped = false
 	
 	local ITEM = PS.Items[item_id]
+	
+	if type(ITEM.CanPlayerHolster) == 'function' then
+		allowed, message = ITEM:CanPlayerHolster(self)
+	elseif type(ITEM.CanPlayerHolster) == 'boolean' then
+		allowed = ITEM.CanPlayerHolster
+	end
+	
+	if not allowed then
+		self:PS_Notify(message or 'You\'re not allowed to holster this item!')
+		return false
+	end
+	
 	ITEM:OnHolster(self)
 	
 	self:PS_Notify('Holstered ', ITEM.Name, '.')
@@ -345,7 +405,7 @@ function Player:PS_ModifyItem(item_id, modifications)
 	if not PS.Items[item_id] then return false end
 	if not self:PS_HasItem(item_id) then return false end
 	if not type(modifications) == "table" then return false end
-	if not self:PS_CanPerformAction() then return false end
+	if not self:PS_CanPerformAction(item_id) then return false end
 	
 	local ITEM = PS.Items[item_id]
 	
@@ -424,5 +484,8 @@ end
 
 function Player:PS_Notify(...)
 	local str = table.concat({...}, '')
-	self:SendLua('notification.AddLegacy("' .. str .. '", NOTIFY_GENERIC, 5)')
+
+	net.Start('PS_SendNotification')
+		net.WriteString(str)
+	net.Send(self)
 end
